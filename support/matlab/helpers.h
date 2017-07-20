@@ -69,5 +69,9 @@ mxArray* decode_region(int formats);
 
 mxArray* decode_image(int formats);
 
+Server* get_handle(const mxArray *arg);
+
+mxArray* set_handle(const Server* handle);
+
 #endif
 

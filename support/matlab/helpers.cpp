@@ -637,3 +637,22 @@ mxArray* decode_image(int formats) {
     return array;
 
 }
+
+Server* get_handle(const mxArray *arg) {
+
+    uint64_t *p = (uint64_t *)mxGetData(arg);
+    return reinterpret_cast<Server*>(*p);
+
+}
+
+mxArray* set_handle(const Server* handle) {
+
+    mxArray* arg;
+
+    arg = mxCreateNumericMatrix(1, 1, mxUINT64_CLASS, mxREAL);
+    uint64_t *p = (uint64_t *)mxGetData(arg);
+    *p = reinterpret_cast<uint64_t>(handle);
+
+    return arg;
+
+}

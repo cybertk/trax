@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <string>
+#include <list>
 #include <algorithm>
 #include <cmath>
 
@@ -19,7 +20,17 @@
 using namespace std;
 using namespace trax;
 
-Server* handle = NULL;
+// Server* handle = NULL;
+std::list<Server*> handles;
+
+
+int handle_is_valid(const Server* handle) {
+
+    std::list<Server*>::iterator iter = std::find(handles.begin(), handles.end(), handle);
+
+    return handles.end() != iter;
+
+}
 
 int fd_is_valid(int fd) {
 #if defined(__OS2__) || defined(__WINDOWS__) || defined(WIN32) || defined(WIN64) || defined(_MSC_VER)
@@ -38,6 +49,13 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     string operation = get_string(prhs[0]);
 
 	std::transform(operation.begin(), operation.end(), operation.begin(), ::tolower);
+
+    Server* handle = get_handle(prhs[1]);
+
+    if (operation != "setup" && !handle_is_valid(handle)) {
+        MEX_ERROR("Invalid handle.");
+        return;
+    }
 
     if (operation == "setup") {
 
@@ -78,19 +96,19 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 #endif
 
         handle = new Server(metadata, trax_no_log);
+        handles.push_back(handle);
 
-        if (nlhs == 1)
-            plhs[0] = mxCreateLogicalScalar(handle > 0);
+        if (nlhs == 1) {
+            plhs[0] = set_handle(handle);
+        }
 
     } else if (operation == "wait") {
 
 		bool propstruct = false;
 
-        if (!handle) { MEX_ERROR("Protocol not initialized."); return; }
-
         if ( nrhs > 1 ) {
 
-			for (int i = 1; i < std::floor((float)nrhs/2) * 2; i+=2) {
+			for (int i = 2; i < std::floor((float)nrhs/2) * 2; i+=2) {
 				switch (get_argument_code(get_string(prhs[i]))) {
 				case ARGUMENT_PROPSTRUCT: propstruct = mxGetScalar(prhs[i+1]) > 0; break;
 				default:
@@ -98,8 +116,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 					return;
 				}
 			}
-
 		}
+
 
         if ( nlhs > 3 ) { MEX_ERROR("At most three output argument supported."); return; }
 
@@ -133,21 +151,19 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
     } else if (operation == "status") {
 
-        if (!handle) { MEX_ERROR("Protocol not initialized."); return; }
+        if ( nrhs > 4 ) { MEX_ERROR("Too many parameters."); return; }
 
-        if ( nrhs > 3 ) { MEX_ERROR("Too many parameters."); return; }
-
-        if ( nrhs < 2 ) { MEX_ERROR("Must specify region parameter."); return; }
+        if ( nrhs < 3 ) { MEX_ERROR("Must specify region parameter."); return; }
 
         if ( nlhs > 1 ) { MEX_ERROR("One output parameter allowed."); return; }
 
         if (!MEX_TEST_DOUBLE(1)) { MEX_ERROR("Illegal region format."); return; }
 
-        Region reg = array_to_region(prhs[1]);
+        Region reg = array_to_region(prhs[2]);
 
         if (!reg) { MEX_ERROR("Illegal region format."); return; }
 
-        Properties prop = ( nrhs == 3 ) ? struct_to_parameters(prhs[2]) : Properties();
+        Properties prop = ( nrhs == 3 ) ? struct_to_parameters(prhs[3]) : Properties();
 
         handle->reply(reg, prop);
 
@@ -156,7 +172,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
     } else if (operation == "quit") {
 
-		if (handle) delete handle;
+		delete handle;
 		handle = NULL;
 
     } else {
