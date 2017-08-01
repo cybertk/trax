@@ -56,7 +56,7 @@
 #define TRAX_IMAGE_BUFFER 8
 #define TRAX_IMAGE_SHM 16
 
-#define TRAX_IMAGE_ANY (TRAX_IMAGE_PATH | TRAX_IMAGE_URL | TRAX_IMAGE_MEMORY | TRAX_IMAGE_BUFFER)
+#define TRAX_IMAGE_ANY (TRAX_IMAGE_PATH | TRAX_IMAGE_URL | TRAX_IMAGE_MEMORY | TRAX_IMAGE_BUFFER | TRAX_IMAGE_SHM)
 
 #define TRAX_IMAGE_BUFFER_ILLEGAL 0
 #define TRAX_IMAGE_BUFFER_PNG 1
@@ -282,6 +282,11 @@ __TRAX_EXPORT trax_image* trax_image_create_memory(int width, int height, int fo
  * Creates a file buffer image description.
 **/
 __TRAX_EXPORT trax_image* trax_image_create_buffer(int length, const char* data);
+
+/**
+ * Creates a shared buffer image description.
+**/
+__TRAX_EXPORT trax_image* trax_image_create_shm(int width, int height, int format);
 
 /**
  * Returns a type of the image handle.
@@ -715,6 +720,11 @@ public:
      * Creates a file buffer image description.
     **/
     static Image create_buffer(int length, const char* data);
+
+    /**
+     * Creates a shared buffer image description.
+    **/
+    static Image create_shm(int width, int height, int format);
 
     /**
      * Releases image structure, frees allocated memory.

@@ -246,7 +246,15 @@ int main(int argc, char** argv) {
 
         int image_formats = tracker.metadata().image_formats();
 
-        if TRAX_SUPPORTS(image_formats, TRAX_IMAGE_BUFFER) {
+        if TRAX_SUPPORTS(image_formats, TRAX_IMAGE_SHM) {
+            size_t length;
+            char* buffer = NULL;
+            tester_copy_resource("static.bin", &buffer, &length);
+            image = Image::create_shm(320, 240, TRAX_IMAGE_MEMORY_RGB);
+            char* dst = image.write_memory_row(0);
+            memcpy(dst, buffer, 320 * 240);
+            free(buffer);
+        } else if TRAX_SUPPORTS(image_formats, TRAX_IMAGE_BUFFER) {
             size_t length;
             char* buffer = NULL;
             tester_copy_resource("static.jpg", &buffer, &length);

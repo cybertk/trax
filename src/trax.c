@@ -1147,6 +1147,7 @@ trax_image* trax_image_create_buffer(int length, const char* data) {
 
 }
 
+#include <errno.h>
 trax_image* trax_image_create_shm(int width, int height, int format) {
 
     int channels, depth, fd;
@@ -1169,14 +1170,20 @@ trax_image* trax_image_create_shm(int width, int height, int format) {
     img->format = format;
 
     shm = (trax_shm_region*) malloc(sizeof(trax_shm_region));
-    sprintf(shm->name, "/trax/%4x", trax_shm_region_next_id);
+    while (1) {
+    sprintf(shm->name, "/trax/%04x", trax_shm_region_next_id);
+    printf("==> %s\n", shm->name);
     trax_shm_region_next_id++;
 
-    fd = shm_open(shm->name, O_CREAT | O_RDWR | O_EXCL);
-    assert(fd != -1);
+    // fd = shm_open(shm->name, O_CREAT | O_RDWR | O_EXCL);
+    fd = shm_open(shm->name, O_CREAT | O_RDWR);
+    printf("==> 1%s\n", strerror(errno));
+    if (fd > 0 ) break;
+    }
 
-    shm->ptr = mmap(NULL, (sizeof(char) * (width * height * depth * channels)),
+    shm->ptr = mmap(NULL, (width * height * depth * channels),
                     PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    printf("==> 2%s\n", strerror(errno));
     assert(shm->ptr != MAP_FAILED);
 
     img->data = (char*) shm;
@@ -1261,26 +1268,32 @@ char* trax_image_write_memory_row(trax_image* image, int row) {
 
     int depth, channels;
 
-    assert(image->type == TRAX_IMAGE_MEMORY);
+    assert(image->type == TRAX_IMAGE_MEMORY || image->type == TRAX_IMAGE_SHM);
     assert(row >= 0 && row < image->height);
 
     depth = MEMORY_DEPTH(image);
     channels = MEMORY_CHANNELS(image);
 
-    return &(image->data[depth * channels * row]);
+    if (image->type == TRAX_IMAGE_SHM)
+        return &(((trax_shm_region*)image->data)->ptr[depth * channels * row]);
+    else
+        return &(image->data[depth * channels * row]);
 }
 
 const char* trax_image_get_memory_row(const trax_image* image, int row) {
 
     int depth, channels;
 
-    assert(image->type == TRAX_IMAGE_MEMORY);
+    assert(image->type == TRAX_IMAGE_MEMORY || image->type == TRAX_IMAGE_SHM);
     assert(row >= 0 && row < image->height);
 
     depth = MEMORY_DEPTH(image);
     channels = MEMORY_CHANNELS(image);
 
-    return &(image->data[depth * channels * row]);
+    if (image->type == TRAX_IMAGE_SHM)
+        return &(((trax_shm_region*)image->data)->ptr[depth * channels * row]);
+    else
+        return &(image->data[depth * channels * row]);
 }
 
 const char* trax_image_get_buffer(const trax_image* image, int* length, int* format) {
