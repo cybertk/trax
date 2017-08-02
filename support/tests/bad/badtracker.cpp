@@ -17,7 +17,10 @@ int main( int argc, char** argv) {
     trax::Region region;
     trax::Properties properties;
 
+    printf("<== ck wati 1 \n");
     int tr = handle.wait(image, region, properties);
+    printf("<== ck wati 2 %d\n", tr);
+
     if (tr == TRAX_INITIALIZE) {
 
       timetobreak = properties.get("break_time", 5);

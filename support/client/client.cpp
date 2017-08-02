@@ -751,6 +751,7 @@ bool TrackerProcess::initialize(const Image& image, const Region& region, const 
 
 	// Initialize the tracker ...
 	int result = state->client->initialize(image, region, properties);
+    printf("ck ==> resulttt %d\n", result);
 
 	state->stop_watchdog();
 
@@ -774,6 +775,7 @@ bool TrackerProcess::wait(Region& region, Properties& properties) {
 	state->start_watchdog();
 
 	int result = state->client->wait(region, properties);
+    printf("==> ck client wait %d\n", result);
 
 	state->stop_watchdog();
 

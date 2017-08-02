@@ -287,11 +287,13 @@ int main(int argc, char** argv) {
         int initializations = 0;
         while (initializations < 5) {
 
+            printf("==> ck do init\n");
             if (!tracker.ready()) {
                 throw std::runtime_error("Tracker process not alive anymore.");
             }
 
             if (!tracker.initialize(image, initialization_region, properties)) {
+                printf("==> ck init\n");
                 throw std::runtime_error("Unable to initialize tracker.");
             }
 
@@ -304,6 +306,7 @@ int main(int argc, char** argv) {
                 Region status;
                 Properties additional;
 
+                printf("==> ck do frame\n");
                 bool result = tracker.wait(status, additional);
 
                 if (result) {
@@ -311,7 +314,9 @@ int main(int argc, char** argv) {
 
                     Region storage;
 
+                    printf("==> ck do frame 1\n");
                 } else {
+                    printf("==> ck do frame 2\n");
                     if (tracker.ready()) {
                         // The tracker has requested termination of connection.
                         print_debug("Termination requested by tracker.\n");

@@ -291,8 +291,10 @@ char* image_encode(trax_image* image) {
         int channels = image->format == TRAX_IMAGE_MEMORY_RGB ? 3 : 1;
         int length = (image->width * image->height * depth * channels);
         const trax_shm_region* shm = image->data;
+        int header = snprintf(NULL, 0, "image:%d;%d;%s;", image->width, image->height, format);
 
-        offset += sprintf(result, 0, "shm:%s;%d;%d;%s", shm->name, image->width, image->height, format);
+        result = (char*) malloc(sizeof(char) * (header + 1));
+        offset += sprintf(result, "shm:%s;%d;%d;%s", shm->name, image->width, image->height, format);
         assert(format);
 
         break;
@@ -391,11 +393,14 @@ trax_image* image_decode(char* buffer) {
         height = strtol(resource+1, &resource, 10);
         if (resource[0] != ';') return result;
 
+        printf("==ck, shm_name end %dx%d\n", width, height);
         token = resource + 1;
         resource = strntok(token, ';', 32);
+        printf("==ck, shm_name format %s\n", token);
+        printf("==ck, shm_name result %s\n", token);
 
-        if (!resource) return NULL;
         format = decode_memory_format(token);
+        printf("==ck, shm_name format: %s\n", token);
 
         depth = format == TRAX_IMAGE_MEMORY_RGB ? 1 :
             (format == TRAX_IMAGE_MEMORY_GRAY8 ? 1 :
@@ -408,10 +413,12 @@ trax_image* image_decode(char* buffer) {
         shm = (trax_shm_region*) malloc(sizeof(trax_shm_region));
         strcpy(shm->name, shm_name);
 
-        int fd = shm_open(shm->name, O_RDWR | O_EXCL, S_IRUSR | S_IWUSR);
+        int fd = shm_open(shm->name, O_RDWR, S_IRUSR | S_IWUSR);
+        printf("==ck, shm_name hsm_open: %d\n", fd);
         assert(fd != -1);
 
         shm->ptr = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        printf("==ck, shm_name mmap: %pvs%p\n", shm->ptr, MAP_FAILED);
         assert(shm->ptr != MAP_FAILED);
 
         result = (trax_image*) malloc(sizeof(trax_image));
@@ -420,8 +427,7 @@ trax_image* image_decode(char* buffer) {
         result->height = height;
         result->format = format;
         result->data = shm;
-
-        assert(result->data != -1);
+        printf("==ck, shm_name end 2: \n");
 #else
         assert("no support of shm");
 #endif
@@ -706,6 +712,7 @@ int trax_client_wait(trax_handle* client, trax_region** region, trax_properties*
 
     if (result == TRAX_STATE) {
 
+        printf("==> ck client_wait state 1\n");
 		region_container *_region = NULL;
 
         if (list_size(arguments) != 1)
@@ -725,6 +732,7 @@ int trax_client_wait(trax_handle* client, trax_region** region, trax_properties*
 
     } else if (result == TRAX_QUIT) {
 
+        printf("==> ck client_wait quit 1\n");
         if (list_size(arguments) != 0)
             goto failure;
 
@@ -767,13 +775,18 @@ int trax_client_initialize(trax_handle* client, trax_image* image, trax_region* 
 
     arguments = list_create(2);
 
+    printf("==> ck1\n");
     if (TRAX_SUPPORTS(client->metadata->format_image, image->type)) {
+    printf("==> ck1.1\n");
         char* buffer = image_encode(image);
+    printf("==> ck1.2\n");
         list_append_direct(arguments, buffer);
     } else goto failure;
 
+    printf("==> ck2\n");
     if (!TRAX_SUPPORTS(client->metadata->format_region, REGION_TYPE(region))) {
 
+    printf("==> ck2.1\n");
         trax_region* converted = NULL;
 
         if TRAX_SUPPORTS(client->metadata->format_region, TRAX_REGION_MASK)
@@ -791,15 +804,19 @@ int trax_client_initialize(trax_handle* client, trax_image* image, trax_region* 
 
     } else data = region_string((region_container *)region);
 
+    printf("==> ck3\n");
     if (data) {
         list_append(arguments, data);
         free(data);
     }
 
+    printf("==> ck4\n");
     write_message((message_stream*)client->stream, &LOGGER(client), TRAX_INITIALIZE, arguments, properties);
 
+    printf("==> ck5\n");
     list_destroy(&arguments);
 
+    printf("==> ck6\n");
     return TRAX_OK;
 
 failure:
@@ -901,21 +918,26 @@ int trax_server_wait(trax_handle* server, trax_image** image, trax_region** regi
 
     result = read_message((message_stream*)server->stream, &LOGGER(server), arguments, tmp_properties);
 
+    printf("<== server wait 1\n");
     if (result == TRAX_FRAME) {
 
+        printf("<== server wait 1.1\n");
         if (list_size(arguments) != 1)
             goto failure;
 
+        printf("<== server wait 1.2\n");
         *image = image_decode(arguments->buffer[0]);
         if (!*image || !TRAX_SUPPORTS(server->metadata->format_image, (*image)->type))
             goto failure;
 
+        printf("<== server wait 1.3\n");
         if (properties)
             copy_properties(tmp_properties, properties);
 
         goto end;
     } else if (result == TRAX_QUIT) {
 
+        printf("<== server wait 1.4\n");
         if (list_size(arguments) != 0)
             goto failure;
 
@@ -927,14 +949,20 @@ int trax_server_wait(trax_handle* server, trax_image** image, trax_region** regi
         goto end;
     } else if (result == TRAX_INITIALIZE) {
 
+        printf("<== server wait 1.5\n");
         if (list_size(arguments) != 2)
             goto failure;
 
+        printf("<== server wait 1.6\n");
         *image = image_decode(arguments->buffer[0]);
 
+        // printf("<== server wait 1.7 %s vs %s\n", (*image)->type, server->metadata->format_image);
+        printf("<== server wait 1.7 %p \n", *image);
+        printf("<== server wait 1.7 %d \n", (*image)->type);
         if (!*image || !TRAX_SUPPORTS(server->metadata->format_image, (*image)->type))
             goto failure;
 
+        printf("<== server wait 1.8\n");
         if (!region_parse(arguments->buffer[1], (region_container**)region)) {
             goto failure;
         }
@@ -947,6 +975,7 @@ int trax_server_wait(trax_handle* server, trax_image** image, trax_region** regi
 
 failure:
 
+        printf("<== server wait 2\n");
     result = TRAX_ERROR;
 
     if (*image)
@@ -957,6 +986,7 @@ failure:
 
 end:
 
+        printf("<== server wait 3\n");
     list_destroy(&arguments);
     trax_properties_release(&tmp_properties);
 
