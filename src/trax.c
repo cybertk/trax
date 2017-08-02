@@ -408,7 +408,7 @@ trax_image* image_decode(char* buffer) {
         shm = (trax_shm_region*) malloc(sizeof(trax_shm_region));
         strcpy(shm->name, shm_name);
 
-        int fd = shm_open(shm->name, O_RDWR | O_EXCL);
+        int fd = shm_open(shm->name, O_RDWR | O_EXCL, S_IRUSR | S_IWUSR);
         assert(fd != -1);
 
         shm->ptr = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
@@ -1150,7 +1150,7 @@ trax_image* trax_image_create_buffer(int length, const char* data) {
 #include <errno.h>
 trax_image* trax_image_create_shm(int width, int height, int format) {
 
-    int channels, depth, fd;
+    int channels, depth, length, fd;
     trax_image* img;
     trax_shm_region* shm;
 
@@ -1161,6 +1161,7 @@ trax_image* trax_image_create_shm(int width, int height, int format) {
         (format == TRAX_IMAGE_MEMORY_GRAY8 ? 1 :
         (format == TRAX_IMAGE_MEMORY_GRAY16 ? 2 : 0));
     channels = format == TRAX_IMAGE_MEMORY_RGB ? 3 : 1;
+    length= width * height * depth * channels;
 
     img = (trax_image*) malloc(sizeof(trax_image));
 
@@ -1173,17 +1174,22 @@ trax_image* trax_image_create_shm(int width, int height, int format) {
     while (1) {
     sprintf(shm->name, "/trax/%04x", trax_shm_region_next_id);
     printf("==> %s\n", shm->name);
-    trax_shm_region_next_id++;
+    if (++trax_shm_region_next_id > 0xffff) {
+        trax_shm_region_next_id = 0;
+        assert(trax_shm_region_next_id != 0);
+    }
 
     // fd = shm_open(shm->name, O_CREAT | O_RDWR | O_EXCL);
-    fd = shm_open(shm->name, O_CREAT | O_RDWR);
-    printf("==> 1%s\n", strerror(errno));
+    fd = shm_open(shm->name, O_CREAT | O_RDWR | O_EXCL, S_IRUSR | S_IWUSR);
+    printf("==> 1 of error: %s\n", strerror(errno));
     if (fd > 0 ) break;
     }
 
+    assert(ftruncate(fd, length) != -1);
+
     shm->ptr = mmap(NULL, (width * height * depth * channels),
                     PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    printf("==> 2%s\n", strerror(errno));
+    printf("==> 2 of error %s\n", strerror(errno));
     assert(shm->ptr != MAP_FAILED);
 
     img->data = (char*) shm;
@@ -1191,39 +1197,6 @@ trax_image* trax_image_create_shm(int width, int height, int format) {
     return img;
 
 }
-
-trax_image* trax_image_create_from_shm_name(const char* name, int width, int height, int format) {
-    int channels, depth, fd;
-    trax_image* img;
-    trax_shm_region* shm;
-
-    assert(format == TRAX_IMAGE_MEMORY_GRAY8 ||
-        format == TRAX_IMAGE_MEMORY_GRAY16 || format == TRAX_IMAGE_MEMORY_RGB);
-
-    depth = format == TRAX_IMAGE_MEMORY_RGB ? 1 :
-        (format == TRAX_IMAGE_MEMORY_GRAY8 ? 1 :
-        (format == TRAX_IMAGE_MEMORY_GRAY16 ? 2 : 0));
-    channels = format == TRAX_IMAGE_MEMORY_RGB ? 3 : 1;
-
-    img = (trax_image*) malloc(sizeof(trax_image));
-
-    img->type = TRAX_IMAGE_SHM;
-    img->width = width;
-    img->height = height;
-    img->format = format;
-
-    shm = (trax_shm_region*) malloc(sizeof(trax_shm_region));
-    strcpy(shm->name, name);
-
-    fd = shm_open(shm->name, O_RDWR | O_EXCL);
-    assert(fd != -1);
-
-    shm->ptr = mmap(NULL, (sizeof(char) * (width * height * depth * channels)),
-                    PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    assert(shm->ptr != MAP_FAILED);
-
-}
-
 
  int trax_image_get_type(const trax_image* image) {
 
