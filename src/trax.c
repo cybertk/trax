@@ -291,7 +291,7 @@ char* image_encode(trax_image* image) {
         int channels = image->format == TRAX_IMAGE_MEMORY_RGB ? 3 : 1;
         int length = (image->width * image->height * depth * channels);
         const trax_shm_region* shm = image->data;
-        int header = snprintf(NULL, 0, "image:%d;%d;%s;", image->width, image->height, format);
+        int header = snprintf(NULL, 0, "shm:%s;%d;%d;%s", shm->name, image->width, image->height, format);
 
         result = (char*) malloc(sizeof(char) * (header + 1));
         offset += sprintf(result, "shm:%s;%d;%d;%s", shm->name, image->width, image->height, format);
@@ -1170,7 +1170,7 @@ trax_image* trax_image_create_shm(int width, int height, int format) {
 
     shm = (trax_shm_region*) malloc(sizeof(trax_shm_region));
     while (1) {
-    sprintf(shm->name, "/trax/%04x", trax_shm_region_next_id);
+    sprintf(shm->name, "/trax-%04x", trax_shm_region_next_id);
     if (++trax_shm_region_next_id > 0xffff) {
         trax_shm_region_next_id = 0;
         assert(trax_shm_region_next_id != 0);
