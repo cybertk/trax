@@ -1218,7 +1218,7 @@ const char* trax_image_get_url(const trax_image* image) {
 
 void trax_image_get_memory_header(const trax_image* image, int* width, int* height, int* format) {
 
-    assert(image->type == TRAX_IMAGE_MEMORY);
+    assert(image->type == TRAX_IMAGE_MEMORY || image->type == TRAX_IMAGE_SHM);
 
     *width = image->width;
     *height = image->height;

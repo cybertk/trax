@@ -33,6 +33,11 @@ else
    arguments{end+1} = '-lut';
 end
 
+% -lrt is required by shared memory type of trax image
+if isunix
+   arguments{end+1} = '-lrt';
+end
+
 build_mex(arguments, isoctave);
 
 disp('Building traxclient MEX file ...');
@@ -49,6 +54,10 @@ if isoctave
    arguments{end+1} = '-DOCTAVE';
 else
    arguments{end+1} = '-lut';
+end
+
+if isunix
+   arguments{end+1} = '-lrt';
 end
 
 build_mex(arguments, isoctave);

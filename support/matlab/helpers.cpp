@@ -282,6 +282,7 @@ mxArray* image_to_array(const Image& img) {
         val = mxCreateCharMatrixFromStrings(1, &cp);
         break;
     }
+    case TRAX_IMAGE_SHM:
     case TRAX_IMAGE_MEMORY: {
         int width, height;
         int format, depth;
@@ -558,6 +559,10 @@ int get_image_code(string str) {
         return TRAX_IMAGE_MEMORY;
     }
 
+    if (str == "shm") {
+        return TRAX_IMAGE_SHM;
+    }
+
     MEX_ERROR("Illegal image type");
     return TRAX_IMAGE_PATH;
 }
@@ -627,6 +632,10 @@ mxArray* decode_image(int formats) {
 
     if (TRAX_SUPPORTS(formats, TRAX_IMAGE_MEMORY)) {
         tmp.push_back(set_string("memory"));
+    }
+
+    if (TRAX_SUPPORTS(formats, TRAX_IMAGE_SHM)) {
+        tmp.push_back(set_string("shm"));
     }
 
 
