@@ -285,11 +285,6 @@ __TRAX_EXPORT trax_image* trax_image_create_memory(int width, int height, int fo
 __TRAX_EXPORT trax_image* trax_image_create_buffer(int length, const char* data);
 
 /**
- * Creates a shared buffer image description.
-**/
-__TRAX_EXPORT trax_image* trax_image_create_shm(int width, int height, int format);
-
-/**
  * Returns a type of the image handle.
 **/
 __TRAX_EXPORT int trax_image_get_type(const trax_image* image);
@@ -721,11 +716,6 @@ public:
      * Creates a file buffer image description.
     **/
     static Image create_buffer(int length, const char* data);
-
-    /**
-     * Creates a shared buffer image description.
-    **/
-    static Image create_shm(int width, int height, int format);
 
     /**
      * Releases image structure, frees allocated memory.

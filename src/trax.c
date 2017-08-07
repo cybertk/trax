@@ -12,6 +12,7 @@
 #include "buffer.h"
 #include "message.h"
 #include "base64.h"
+#include "shm.h"
 
 #define VALIDATE_HANDLE(H) assert(((H)->flags & TRAX_FLAG_VALID))
 #define VALIDATE_SERVER_HANDLE(H) assert(((H)->flags & TRAX_FLAG_VALID) && ((H)->flags & TRAX_FLAG_SERVER))
@@ -60,22 +61,6 @@ int get_shared_fd(int h, int read) {
 
 #ifndef TRAX_BUILD_VERSION
 #define TRAX_BUILD_VERSION "unknown"
-#endif
-
-#if defined(__unix__) || defined(__APPLE__)
-#define TRAX_SUPPORT_SHM
-#include <unistd.h>
-//#include <fcntl.h>
-#include <sys/mman.h>
-
-typedef struct {
-    char name[12];
-    int length;
-    char* ptr;
-} trax_shm_region;
-
-static int trax_shm_region_next_id = 0;
-
 #endif
 
 const char* trax_version() {
@@ -256,12 +241,12 @@ char* image_encode(trax_image* image, int use_shm) {
             (image->format == TRAX_IMAGE_MEMORY_GRAY16 ? 2 : 0));
         int channels = image->format == TRAX_IMAGE_MEMORY_RGB ? 3 : 1;
         int length = (image->width * image->height * depth * channels);
-        int body = use_shm ? shmencodelen : base64encodelen(length);
+        int body = use_shm ? shm_encodelen(length) : base64encodelen(length);
         int header = snprintf(NULL, 0, "image:%d;%d;%s;", image->width, image->height, format);
         result = (char*) malloc(sizeof(char) * (body + header + 1));
         offset += sprintf(result, "image:%d;%d;%s;", image->width, image->height, format);
         if (use_shm) {
-            shmencode(result + offset, (unsigned char*)image->data);
+            shm_encode(result + offset, (shm_region *)image->data);
         } else {
             base64encode(result + offset, (unsigned char*)image->data, length);
         }
@@ -288,7 +273,7 @@ char* image_encode(trax_image* image, int use_shm) {
     return result;
 }
 
-trax_image* image_decode(char* buffer, int use_shm) {
+trax_image* image_decode(char* buffer) {
 
     trax_image* result = NULL;
 
@@ -314,10 +299,12 @@ trax_image* image_decode(char* buffer, int use_shm) {
         token = resource + 1;
         resource = strntok(token, ';', 32);
 
+        printf("ckaa1\n");
         if (!resource) return NULL;
         format = decode_memory_format(token);
 
-        outlen = (use_shm ? shm_decodelen(resource) : base64decodelen(resource)) - 1;
+        int use_shm = strncmp(resource, "/trax-", 6);
+        outlen = use_shm ? shm_decodelen(resource) : (base64decodelen(resource) - 1);
 
         depth = format == TRAX_IMAGE_MEMORY_RGB ? 1 :
             (format == TRAX_IMAGE_MEMORY_GRAY8 ? 1 :
@@ -325,20 +312,24 @@ trax_image* image_decode(char* buffer, int use_shm) {
         channels = format == TRAX_IMAGE_MEMORY_RGB ? 3 : 1;
         allocated =  use_shm ? sizeof(shm_region) : (width * height * depth * channels);
 
+        printf("ckaa12\n");
         if (width < 1 || height < 1 || outlen != allocated) return result;
 
+        printf("ck1\n");
         result = (trax_image*) malloc(sizeof(trax_image));
         result->type = TRAX_IMAGE_MEMORY;
         result->width = width;
         result->height = height;
         result->format = format;
         result->data = (char*) malloc(sizeof(char) * allocated);
+        printf("ck2\n");
         if (use_shm) {
             verify = shm_decode((shm_region*)result->data, resource);
         } else {
             verify = base64decode((unsigned char*)result->data, resource);
         }
 
+        printf("ck2\n");
         assert(verify == allocated);
 
     } else if (strcmp(buffer, "data") == 0) {
@@ -360,55 +351,6 @@ trax_image* image_decode(char* buffer, int use_shm) {
         result->data = (char*) malloc(sizeof(char) * (outlen));
         base64decode((unsigned char*)result->data, resource);
 
-    } else if (strcmp(buffer, "shm") == 0) {
-#if defined(TRAX_SUPPORT_SHM)
-        int outlen, width, height, depth, format, channels, length, shmid;
-        char* token, *shm_name;
-        trax_shm_region* shm;
-
-        token = resource;
-
-        resource = strntok(token, ';', 32);
-        if (!resource) return NULL;
-
-        shm_name = token;
-
-        width = strtol(resource, &resource, 10);
-        if (resource[0] != ';') return result;
-        height = strtol(resource+1, &resource, 10);
-        if (resource[0] != ';') return result;
-
-        token = resource + 1;
-        resource = strntok(token, ';', 32);
-
-        format = decode_memory_format(token);
-
-        depth = format == TRAX_IMAGE_MEMORY_RGB ? 1 :
-            (format == TRAX_IMAGE_MEMORY_GRAY8 ? 1 :
-            (format == TRAX_IMAGE_MEMORY_GRAY16 ? 2 : 0));
-        channels = format == TRAX_IMAGE_MEMORY_RGB ? 3 : 1;
-        length =  (width * height * depth * channels);
-
-        if (width < 1 || height < 1) return result;
-
-        shm = (trax_shm_region*) malloc(sizeof(trax_shm_region));
-        strcpy(shm->name, shm_name);
-
-        int fd = shm_open(shm->name, O_RDWR, S_IRUSR | S_IWUSR);
-        assert(fd != -1);
-
-        shm->ptr = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-        assert(shm->ptr != MAP_FAILED);
-
-        result = (trax_image*) malloc(sizeof(trax_image));
-        result->type = TRAX_IMAGE_SHM;
-        result->width = width;
-        result->height = height;
-        result->format = format;
-        result->data = shm;
-#else
-        assert("no support of shm");
-#endif
     } else {
         *(resource--) = ':'; // Restore the semicolon and use the buffer as URL
         result = trax_image_create_url(buffer);
@@ -432,8 +374,6 @@ int image_formats_decode(char *str) {
             formats |= TRAX_IMAGE_MEMORY;
         else if (strcmp(pch, "buffer") == 0)
             formats |= TRAX_IMAGE_BUFFER;
-        else if (strcmp(pch, "shm") == 0)
-            formats |= TRAX_IMAGE_SHM;
         else if (strlen(pch) == 0)
             continue; // Skip empty
         else return -1;
@@ -461,9 +401,6 @@ void image_formats_encode(int formats, char *key) {
     }
     if (TRAX_SUPPORTS(formats, TRAX_IMAGE_BUFFER)) {
         pch += sprintf(pch, "buffer;");
-    }
-    if (TRAX_SUPPORTS(formats, TRAX_IMAGE_SHM)) {
-        pch += sprintf(pch, "shm;");
     }
 
 }
@@ -547,6 +484,9 @@ trax_handle* client_setup(message_stream* stream, const trax_logging log) {
 
     client->version = trax_properties_get_int(tmp_properties, "trax.version", 1);
 
+    if (trax_properties_get_int(tmp_properties, "trax.shm", 1))
+        client->flags |= TRAX_FLAG_SHM;
+
     tmp = trax_properties_get(tmp_properties, "trax.region");
     region_formats = region_formats_decode(tmp);
     free(tmp);
@@ -601,6 +541,9 @@ trax_handle* server_setup(trax_metadata *metadata, message_stream* stream, const
 
     image_formats_encode(metadata->format_image, tmp);
     trax_properties_set(properties, "trax.image", tmp);
+
+    if (server->flags & TRAX_FLAG_SHM)
+        trax_properties_set_int(properties, "trax.shm", 1);
 
     if (metadata->tracker_name)
         trax_properties_set(properties, "trax.name", metadata->tracker_name);
@@ -758,7 +701,7 @@ int trax_client_initialize(trax_handle* client, trax_image* image, trax_region* 
     arguments = list_create(2);
 
     if (TRAX_SUPPORTS(client->metadata->format_image, image->type)) {
-        char* buffer = image_encode(image);
+        char* buffer = image_encode(image, client->flags & TRAX_FLAG_SHM);
         list_append_direct(arguments, buffer);
     } else goto failure;
 
@@ -813,7 +756,7 @@ int trax_client_frame(trax_handle* client, trax_image* image, trax_properties* p
     arguments = list_create(2);
 
     if (TRAX_SUPPORTS(client->metadata->format_image, image->type)) {
-        char* buffer = image_encode(image);
+        char* buffer = image_encode(image, client->flags & TRAX_FLAG_SHM);
         list_append_direct(arguments, buffer);
     } else goto failure;
 
@@ -1112,8 +1055,13 @@ trax_image* trax_image_create_memory(int width, int height, int format) {
     img->width = width;
     img->height = height;
     img->format = format;
+#if defined(__unix__) || defined(__APPLE__)
+    img->data = (char*) shm_alloc(sizeof(char) * (width * height * depth * channels));
+#else
     img->data = (char*) malloc(sizeof(char) * (width * height * depth * channels));
+#endif
 
+    assert(img->data != NULL);
     return img;
 
 }
@@ -1135,54 +1083,6 @@ trax_image* trax_image_create_buffer(int length, const char* data) {
     img->format = format;
     img->data = (char*) malloc(sizeof(char) * length);
     memcpy(img->data, data, length);
-
-    return img;
-
-}
-
-#include <errno.h>
-trax_image* trax_image_create_shm(int width, int height, int format) {
-
-    int channels, depth, length, fd;
-    trax_image* img;
-    trax_shm_region* shm;
-
-    assert(format == TRAX_IMAGE_MEMORY_GRAY8 ||
-        format == TRAX_IMAGE_MEMORY_GRAY16 || format == TRAX_IMAGE_MEMORY_RGB);
-
-    depth = format == TRAX_IMAGE_MEMORY_RGB ? 1 :
-        (format == TRAX_IMAGE_MEMORY_GRAY8 ? 1 :
-        (format == TRAX_IMAGE_MEMORY_GRAY16 ? 2 : 0));
-    channels = format == TRAX_IMAGE_MEMORY_RGB ? 3 : 1;
-    length= width * height * depth * channels;
-
-    img = (trax_image*) malloc(sizeof(trax_image));
-
-    img->type = TRAX_IMAGE_SHM;
-    img->width = width;
-    img->height = height;
-    img->format = format;
-
-    shm = (trax_shm_region*) malloc(sizeof(trax_shm_region));
-    while (1) {
-    sprintf(shm->name, "/trax-%04x", trax_shm_region_next_id);
-    if (++trax_shm_region_next_id > 0xffff) {
-        trax_shm_region_next_id = 0;
-        assert(trax_shm_region_next_id != 0);
-    }
-
-    // fd = shm_open(shm->name, O_CREAT | O_RDWR | O_EXCL);
-    fd = shm_open(shm->name, O_CREAT | O_RDWR | O_EXCL, S_IRUSR | S_IWUSR);
-    if (fd > 0 ) break;
-    }
-
-    assert(ftruncate(fd, length) != -1);
-
-    shm->ptr = mmap(NULL, (width * height * depth * channels),
-                    PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    assert(shm->ptr != MAP_FAILED);
-
-    img->data = (char*) shm;
 
     return img;
 
@@ -1213,7 +1113,7 @@ const char* trax_image_get_url(const trax_image* image) {
 
 void trax_image_get_memory_header(const trax_image* image, int* width, int* height, int* format) {
 
-    assert(image->type == TRAX_IMAGE_MEMORY || image->type == TRAX_IMAGE_SHM);
+    assert(image->type == TRAX_IMAGE_MEMORY);
 
     *width = image->width;
     *height = image->height;
@@ -1231,32 +1131,34 @@ char* trax_image_write_memory_row(trax_image* image, int row) {
 
     int depth, channels;
 
-    assert(image->type == TRAX_IMAGE_MEMORY || image->type == TRAX_IMAGE_SHM);
+    assert(image->type == TRAX_IMAGE_MEMORY);
     assert(row >= 0 && row < image->height);
 
     depth = MEMORY_DEPTH(image);
     channels = MEMORY_CHANNELS(image);
 
-    if (image->type == TRAX_IMAGE_SHM)
-        return &(((trax_shm_region*)image->data)->ptr[depth * channels * row]);
-    else
-        return &(image->data[depth * channels * row]);
+#if defined(__unix__) || defined(__APPLE__)
+    return &(((shm_region*)image->data)->ptr[depth * channels * row]);
+#else
+    return &(image->data[depth * channels * row]);
+#endif
 }
 
 const char* trax_image_get_memory_row(const trax_image* image, int row) {
 
     int depth, channels;
 
-    assert(image->type == TRAX_IMAGE_MEMORY || image->type == TRAX_IMAGE_SHM);
+    assert(image->type == TRAX_IMAGE_MEMORY);
     assert(row >= 0 && row < image->height);
 
     depth = MEMORY_DEPTH(image);
     channels = MEMORY_CHANNELS(image);
 
-    if (image->type == TRAX_IMAGE_SHM)
-        return &(((trax_shm_region*)image->data)->ptr[depth * channels * row]);
-    else
-        return &(image->data[depth * channels * row]);
+#if defined(__unix__) || defined(__APPLE__)
+    return &(((shm_region*)image->data)->ptr[depth * channels * row]);
+#else
+    return &(image->data[depth * channels * row]);
+#endif
 }
 
 const char* trax_image_get_buffer(const trax_image* image, int* length, int* format) {

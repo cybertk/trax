@@ -340,12 +340,6 @@ Image Image::create_buffer(int length, const char* data) {
 	return image;
 }
 
-Image Image::create_shm(int width, int height, int format) {
-	Image image;
-	image.wrap(trax_image_create_shm(width, height, format));
-	return image;
-}
-
 Image::~Image() {
 	release();
 }
