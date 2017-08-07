@@ -228,7 +228,7 @@ void copy_property(const char *key, const char *value, const void *obj) {
 
 }
 
-char* image_encode(trax_image* image) {
+char* image_encode(trax_image* image, int use_shm) {
 
     char* result = NULL;
 
@@ -256,13 +256,16 @@ char* image_encode(trax_image* image) {
             (image->format == TRAX_IMAGE_MEMORY_GRAY16 ? 2 : 0));
         int channels = image->format == TRAX_IMAGE_MEMORY_RGB ? 3 : 1;
         int length = (image->width * image->height * depth * channels);
-        int encoded = base64encodelen(length);
+        int body = use_shm ? shmencodelen : base64encodelen(length);
         int header = snprintf(NULL, 0, "image:%d;%d;%s;", image->width, image->height, format);
-        assert(format);
-
-        result = (char*) malloc(sizeof(char) * (encoded + header + 1));
+        result = (char*) malloc(sizeof(char) * (body + header + 1));
         offset += sprintf(result, "image:%d;%d;%s;", image->width, image->height, format);
-        base64encode(result + offset, (unsigned char*)image->data, length);
+        if (use_shm) {
+            shmencode(result + offset, (unsigned char*)image->data);
+        } else {
+            base64encode(result + offset, (unsigned char*)image->data, length);
+        }
+
         break;
     }
     case TRAX_IMAGE_BUFFER: {
@@ -279,34 +282,13 @@ char* image_encode(trax_image* image) {
         //result[offset] = 0;
         break;
     }
-    case TRAX_IMAGE_SHM: {
-#if defined(TRAX_SUPPORT_SHM)
-        int offset = 0;
-        const char* format = image->format == TRAX_IMAGE_MEMORY_RGB ? "rgb" :
-            image->format == TRAX_IMAGE_MEMORY_GRAY8 ? "gray8" :
-            image->format == TRAX_IMAGE_MEMORY_GRAY16 ? "gray16" : NULL;
-        int depth = image->format == TRAX_IMAGE_MEMORY_RGB ? 1 :
-            (image->format == TRAX_IMAGE_MEMORY_GRAY8 ? 1 :
-            (image->format == TRAX_IMAGE_MEMORY_GRAY16 ? 2 : 0));
-        int channels = image->format == TRAX_IMAGE_MEMORY_RGB ? 3 : 1;
-        int length = (image->width * image->height * depth * channels);
-        const trax_shm_region* shm = image->data;
-        int header = snprintf(NULL, 0, "shm:%s;%d;%d;%s", shm->name, image->width, image->height, format);
-
-        result = (char*) malloc(sizeof(char) * (header + 1));
-        offset += sprintf(result, "shm:%s;%d;%d;%s", shm->name, image->width, image->height, format);
-        assert(format);
-
-        break;
-#endif
-    }
 
     }
 
     return result;
 }
 
-trax_image* image_decode(char* buffer) {
+trax_image* image_decode(char* buffer, int use_shm) {
 
     trax_image* result = NULL;
 
@@ -335,13 +317,13 @@ trax_image* image_decode(char* buffer) {
         if (!resource) return NULL;
         format = decode_memory_format(token);
 
-        outlen = base64decodelen(resource) - 1;
+        outlen = (use_shm ? shm_decodelen(resource) : base64decodelen(resource)) - 1;
 
         depth = format == TRAX_IMAGE_MEMORY_RGB ? 1 :
             (format == TRAX_IMAGE_MEMORY_GRAY8 ? 1 :
             (format == TRAX_IMAGE_MEMORY_GRAY16 ? 2 : 0));
         channels = format == TRAX_IMAGE_MEMORY_RGB ? 3 : 1;
-        allocated =  (width * height * depth * channels);
+        allocated =  use_shm ? sizeof(shm_region) : (width * height * depth * channels);
 
         if (width < 1 || height < 1 || outlen != allocated) return result;
 
@@ -351,7 +333,11 @@ trax_image* image_decode(char* buffer) {
         result->height = height;
         result->format = format;
         result->data = (char*) malloc(sizeof(char) * allocated);
-        verify = base64decode((unsigned char*)result->data, resource);
+        if (use_shm) {
+            verify = shm_decode((shm_region*)result->data, resource);
+        } else {
+            verify = base64decode((unsigned char*)result->data, resource);
+        }
 
         assert(verify == allocated);
 
@@ -542,6 +528,9 @@ trax_handle* client_setup(message_stream* stream, const trax_logging log) {
     trax_handle* client = (trax_handle*) malloc(sizeof(trax_handle));
 
     client->flags = (0 & ~TRAX_FLAG_SERVER) | TRAX_FLAG_VALID;
+#if defined(__unix__) || defined(__APPLE__)
+    client->flags |= TRAX_FLAG_SHM;
+#endif
 
     client->logging = log;
     client->stream = stream;
@@ -595,6 +584,9 @@ trax_handle* server_setup(trax_metadata *metadata, message_stream* stream, const
     char tmp[BUFFER_LENGTH];
 
     server->flags = (TRAX_FLAG_SERVER) | TRAX_FLAG_VALID;
+#if defined(__unix__) || defined(__APPLE__)
+    server->flags |= TRAX_FLAG_SHM;
+#endif
     server->logging = log;
 
     server->stream = stream;
@@ -1053,6 +1045,9 @@ int trax_get_parameter(trax_handle* handle, int id, int* value) {
             return 1;
         case TRAX_PARAMETER_SOCKET:
             *value = (((message_stream*)handle->stream)->flags & TRAX_STREAM_SOCKET);
+            return 1;
+        case TRAX_PARAMETER_SHM:
+            *value = !(handle->flags & TRAX_FLAG_SHM);
             return 1;
     }
 
